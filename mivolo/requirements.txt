@@ -1,0 +1,14 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+transformers==4.51.0
+accelerate==1.8.1
+torch>=2.0.0
+torchvision>=0.15.0
+opencv-python-headless>=4.8.0
+numpy>=1.24.0
+ultralytics>=8.3.0
+Pillow>=10.0.0
+timm==0.8.13.dev0
+huggingface-hub>=0.30.0
+omegaconf>=2.3.0

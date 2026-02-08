@@ -11,9 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip setuptools \
+RUN pip install --no-cache-dir --upgrade pip "setuptools<70" \
     && pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir --no-deps git+https://github.com/WildChlamydia/MiVOLO.git
+    && pip install --no-cache-dir --no-deps --no-build-isolation git+https://github.com/WildChlamydia/MiVOLO.git
 
 COPY app.py .
 

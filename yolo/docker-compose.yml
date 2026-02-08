@@ -1,0 +1,28 @@
+services:
+  yolo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - MODEL_PATH=${MODEL_PATH:-yolo26x.pt}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      start_period: 60s
+      timeout: 10s
+    volumes:
+      - model-cache:/root/.cache
+    restart: unless-stopped
+
+volumes:
+  model-cache:

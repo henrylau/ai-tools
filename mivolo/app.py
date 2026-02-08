@@ -247,8 +247,10 @@ async def predict(
 
     return {
         "predictions": results,
+        "total_detected": len(results),
         "persons_detected": len(persons),
         "faces_detected": len(faces),
+        "image_size": {"width": image.shape[1], "height": image.shape[0]},
         "settings": {
             "score_threshold": score_threshold,
             "iou_threshold": iou_threshold,

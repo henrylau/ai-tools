@@ -25,5 +25,9 @@ venv/
 .DS_Store
 Thumbs.db
 
+# Training outputs
+runs/
+datasets/
+
 # HuggingFace model cache
 .cache/

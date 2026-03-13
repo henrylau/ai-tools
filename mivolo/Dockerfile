@@ -8,12 +8,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     && rm -rf /var/lib/apt/lists/*
 
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip "setuptools<70" \
-    && pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir --no-deps --no-build-isolation git+https://github.com/WildChlamydia/MiVOLO.git
+RUN uv pip install --system --no-cache "setuptools<70" \
+    && uv pip install --system --no-cache -r requirements.txt \
+    && uv pip install --system --no-cache --no-deps --no-build-isolation git+https://github.com/WildChlamydia/MiVOLO.git
 
 COPY app.py .
 

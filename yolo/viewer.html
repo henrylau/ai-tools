@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dataset Viewer</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, sans-serif;
+      background: #111;
+      color: #eee;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 16px;
+      gap: 12px;
+    }
+
+    header {
+      width: 100%;
+      max-width: 960px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    h1 { font-size: 1rem; font-weight: 600; color: #aaa; flex: 1; }
+
+    select, button, input[type=number] {
+      background: #222;
+      color: #eee;
+      border: 1px solid #444;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 0.875rem;
+      cursor: pointer;
+    }
+
+    button:hover { background: #333; }
+    button:disabled { opacity: 0.3; cursor: default; }
+
+    .nav {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .counter {
+      font-size: 0.875rem;
+      color: #888;
+      min-width: 90px;
+      text-align: center;
+    }
+
+    input[type=number] {
+      width: 64px;
+      text-align: center;
+      -moz-appearance: textfield;
+    }
+    input[type=number]::-webkit-inner-spin-button { display: none; }
+
+    #canvas-wrap {
+      position: relative;
+      max-width: 960px;
+      width: 100%;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-radius: 8px;
+      background: #000;
+    }
+
+    #legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      max-width: 960px;
+      width: 100%;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.8rem;
+      background: #1a1a1a;
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+
+    .legend-swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+
+    #status {
+      font-size: 0.8rem;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1 id="dataset-name">Loading…</h1>
+
+  <div class="nav">
+    <select id="split-select"></select>
+
+    <button id="btn-prev" disabled>&#8592;</button>
+
+    <input id="jump-input" type="number" min="1" title="Jump to image number" />
+
+    <button id="btn-next" disabled>&#8594;</button>
+
+    <span class="counter" id="counter"></span>
+  </div>
+</header>
+
+<div id="canvas-wrap">
+  <canvas id="canvas"></canvas>
+</div>
+
+<div id="legend"></div>
+<div id="status"></div>
+
+<script>
+// ── palette (20 distinct colours) ────────────────────────────────────────────
+const PALETTE = [
+  '#e6194b','#3cb44b','#4363d8','#f58231','#911eb4',
+  '#42d4f4','#f032e6','#bfef45','#fabed4','#469990',
+  '#dcbeff','#9a6324','#fffac8','#800000','#aaffc3',
+  '#808000','#ffd8b1','#000075','#a9a9a9','#ffffff',
+]
+const color = id => PALETTE[id % PALETTE.length]
+
+// ── state ─────────────────────────────────────────────────────────────────────
+let info = null          // /viewer/info response
+let split = 'train'
+let index = 0
+
+const canvas   = document.getElementById('canvas')
+const ctx      = canvas.getContext('2d')
+const counter  = document.getElementById('counter')
+const status   = document.getElementById('status')
+const jumpInput = document.getElementById('jump-input')
+
+// ── fetch helpers ─────────────────────────────────────────────────────────────
+async function fetchInfo() {
+  const res = await fetch('/viewer/info')
+  info = await res.json()
+}
+
+async function fetchAnnotations(sp, idx) {
+  const res = await fetch(`/viewer/annotations?split=${sp}&index=${idx}`)
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+// ── render ────────────────────────────────────────────────────────────────────
+async function render() {
+  status.textContent = 'Loading…'
+  const total = info.splits[split] ?? 0
+  counter.textContent = `${index + 1} / ${total}`
+  jumpInput.value = index + 1
+
+  const [ann, img] = await Promise.all([
+    fetchAnnotations(split, index),
+    loadImage(`/viewer/image?split=${split}&index=${index}`),
+  ])
+
+  // size canvas to natural image size
+  canvas.width  = img.naturalWidth
+  canvas.height = img.naturalHeight
+  ctx.drawImage(img, 0, 0)
+
+  const W = img.naturalWidth
+  const H = img.naturalHeight
+
+  for (const a of ann.annotations) {
+    const { cx, cy, w, h } = a.bbox_norm
+    const x = (cx - w / 2) * W
+    const y = (cy - h / 2) * H
+    const bw = w * W
+    const bh = h * H
+
+    const c = color(a.class_id)
+
+    // box
+    ctx.lineWidth   = Math.max(1.5, W / 400)
+    ctx.strokeStyle = c
+    ctx.strokeRect(x, y, bw, bh)
+
+    // label background + text
+    const fontSize = Math.max(11, W / 60)
+    ctx.font = `${fontSize}px system-ui, sans-serif`
+    const label = a.class_name
+    const tw    = ctx.measureText(label).width
+    const pad   = 3
+    const lh    = fontSize + pad * 2
+
+    const labelY = y - lh < 0 ? y : y - lh
+
+    ctx.fillStyle = c
+    ctx.fillRect(x, labelY, tw + pad * 2, lh)
+
+    ctx.fillStyle = '#000'
+    ctx.fillText(label, x + pad, labelY + fontSize)
+  }
+
+  renderLegend(ann.annotations)
+  status.textContent = ann.filename
+  document.getElementById('btn-prev').disabled = index === 0
+  document.getElementById('btn-next').disabled = index >= total - 1
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload  = () => resolve(img)
+    img.onerror = reject
+    img.src = src
+  })
+}
+
+function renderLegend(annotations) {
+  const legend = document.getElementById('legend')
+  legend.innerHTML = ''
+  const seen = new Map()
+  for (const a of annotations) {
+    seen.set(a.class_id, a.class_name)
+  }
+  for (const [id, name] of [...seen.entries()].sort((a, b) => a[0] - b[0])) {
+    const item = document.createElement('div')
+    item.className = 'legend-item'
+    item.innerHTML = `<span class="legend-swatch" style="background:${color(id)}"></span>${name}`
+    legend.appendChild(item)
+  }
+}
+
+// ── navigation ────────────────────────────────────────────────────────────────
+function go(delta) {
+  const total = info.splits[split] ?? 0
+  index = Math.max(0, Math.min(total - 1, index + delta))
+  render()
+}
+
+document.getElementById('btn-prev').addEventListener('click', () => go(-1))
+document.getElementById('btn-next').addEventListener('click', () => go(+1))
+
+document.addEventListener('keydown', e => {
+  if (e.target === jumpInput) return
+  if (e.key === 'ArrowLeft')  go(-1)
+  if (e.key === 'ArrowRight') go(+1)
+})
+
+jumpInput.addEventListener('change', () => {
+  const total = info.splits[split] ?? 0
+  const v = parseInt(jumpInput.value, 10)
+  if (!isNaN(v)) {
+    index = Math.max(0, Math.min(total - 1, v - 1))
+    render()
+  }
+})
+
+document.getElementById('split-select').addEventListener('change', e => {
+  split = e.target.value
+  index = 0
+  render()
+})
+
+// ── init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  await fetchInfo()
+
+  document.getElementById('dataset-name').textContent = info.name
+
+  const sel = document.getElementById('split-select')
+  for (const [sp, count] of Object.entries(info.splits)) {
+    const opt = document.createElement('option')
+    opt.value = sp
+    opt.textContent = `${sp} (${count})`
+    sel.appendChild(opt)
+  }
+  split = sel.value
+
+  render()
+}
+
+init()
+</script>
+</body>
+</html>

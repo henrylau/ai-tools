@@ -9,6 +9,8 @@ import torch
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from ultralytics import YOLO
 
+from viewer import router as viewer_router, _dataset_available
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -41,6 +43,9 @@ app = FastAPI(
     description="Object detection API using YOLO26",
     lifespan=lifespan,
 )
+
+if _dataset_available:
+    app.include_router(viewer_router)
 
 
 @app.get("/health")

@@ -119,6 +119,37 @@ python train.py --data datasets/aquarium-combined/data.yaml --epochs 50 --name m
 
 Results are saved to `runs/train/<name>/`.
 
+### Train Face + Person Detector
+
+`train_face_person.py` downloads WIDERFace and COCO person datasets, merges them into a unified 2-class dataset (`person`, `face`), and trains a YOLO26 model.
+
+```bash
+# Full pipeline: download datasets + train (yolo26n by default)
+python train_face_person.py
+
+# Use yolo26s for better accuracy
+python train_face_person.py --model yolo26s.pt
+
+# Skip download if datasets already exist
+python train_face_person.py --skip-download
+
+# Custom parameters
+python train_face_person.py --model yolo26s.pt --epochs 100 --batch 8 --device mps
+```
+
+**Options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--model` | `yolo26n.pt` | Model variant (`yolo26n.pt` or `yolo26s.pt`) |
+| `--epochs` | 50 | Training epochs |
+| `--batch` | 16 | Batch size (-1 for auto) |
+| `--imgsz` | 640 | Input image size |
+| `--device` | auto | Device (`cpu`, `0`, `mps`) |
+| `--skip-download` | false | Skip dataset download |
+
+Results are saved to `runs/face-person/<model>_face_person/weights/best.pt`.
+
 ## Dataset Viewer
 
 When a dataset is present at `DATASET_PATH`, the `/viewer` endpoint serves an interactive UI for browsing images and annotations across train/valid/test splits.

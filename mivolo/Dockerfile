@@ -17,7 +17,7 @@ RUN uv pip install --system --no-cache "setuptools<70" \
     && uv pip install --system --no-cache -r requirements.txt \
     && uv pip install --system --no-cache --no-deps --no-build-isolation git+https://github.com/WildChlamydia/MiVOLO.git
 
-COPY app.py .
+COPY app.py test.html ./
 
 # Pre-download model files at build time (download only, no loading into memory)
 RUN python -c "\

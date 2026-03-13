@@ -1,6 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
 from enum import Enum
+from pathlib import Path
 from typing import Optional
 
 import cv2
@@ -8,6 +9,7 @@ import huggingface_hub
 import numpy as np
 import torch
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import HTMLResponse
 from transformers import (
     AutoConfig,
     AutoImageProcessor,
@@ -74,6 +76,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="MiVoLo v2 Age & Gender Estimation", lifespan=lifespan)
+
+TEST_HTML = Path(__file__).parent / "test.html"
+
+
+@app.get("/test", response_class=HTMLResponse)
+async def test_page():
+    return HTMLResponse(TEST_HTML.read_text())
 
 
 def detect_persons_and_faces(

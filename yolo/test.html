@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YOLO Test</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, sans-serif;
+      background: #111;
+      color: #eee;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 24px;
+      gap: 16px;
+    }
+
+    h1 { font-size: 1.1rem; font-weight: 600; color: #aaa; }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    label { font-size: 0.85rem; color: #999; }
+
+    select, button, input[type=file], input[type=range], input[type=text] {
+      background: #222;
+      color: #eee;
+      border: 1px solid #444;
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 0.875rem;
+      cursor: pointer;
+    }
+
+    input[type=text] { cursor: text; width: 160px; }
+
+    button { min-width: 80px; }
+    button:hover { background: #333; }
+    button:disabled { opacity: 0.3; cursor: default; }
+    button.primary { background: #2563eb; border-color: #2563eb; }
+    button.primary:hover { background: #1d4ed8; }
+    button.primary:disabled { background: #222; border-color: #444; }
+
+    .drop-zone {
+      width: 100%;
+      max-width: 960px;
+      min-height: 200px;
+      border: 2px dashed #444;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: border-color 0.2s;
+      position: relative;
+    }
+
+    .drop-zone.dragover { border-color: #2563eb; }
+    .drop-zone.has-image { border: none; min-height: auto; cursor: default; }
+
+    .drop-zone p { color: #666; font-size: 0.9rem; }
+
+    #file-input { display: none; }
+
+    #canvas-wrap {
+      position: relative;
+      max-width: 960px;
+      width: 100%;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-radius: 8px;
+      background: #000;
+    }
+
+    #results {
+      width: 100%;
+      max-width: 960px;
+    }
+
+    .legend {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.8rem;
+      color: #ccc;
+    }
+
+    .legend-swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+    }
+
+    .result-card {
+      background: #1a1a1a;
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+
+    .result-card:hover { background: #222; }
+
+    .result-card .index {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 0.8rem;
+      flex-shrink: 0;
+      color: #fff;
+    }
+
+    .result-card .details {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    .result-card .field { color: #999; }
+    .result-card .value { color: #eee; font-weight: 500; }
+
+    #status {
+      font-size: 0.85rem;
+      color: #666;
+      min-height: 1.2em;
+    }
+
+    .summary {
+      font-size: 0.85rem;
+      color: #888;
+      margin-bottom: 8px;
+    }
+  </style>
+</head>
+<body>
+
+<h1>YOLO Object Detection</h1>
+
+<div class="controls">
+  <label>
+    Confidence
+    <input type="range" id="score-input" min="0.05" max="0.95" step="0.05" value="0.25" />
+    <span id="score-label">0.25</span>
+  </label>
+
+  <label>
+    IoU
+    <input type="range" id="iou-input" min="0.1" max="0.9" step="0.05" value="0.45" />
+    <span id="iou-label">0.45</span>
+  </label>
+
+  <label>
+    Classes
+    <input type="text" id="classes-input" placeholder="e.g. 0,1,2 (optional)" />
+  </label>
+
+  <button class="primary" id="btn-predict" disabled>Predict</button>
+  <button id="btn-reupload" style="display:none">Change Image</button>
+</div>
+
+<div class="drop-zone" id="drop-zone">
+  <p>Drop an image here or click to upload</p>
+  <input type="file" id="file-input" accept="image/*" />
+</div>
+
+<div id="canvas-wrap" style="display:none">
+  <canvas id="canvas"></canvas>
+</div>
+
+<div id="status"></div>
+<div id="results"></div>
+
+<script>
+const BOX_COLORS = [
+  '#e6194b','#3cb44b','#4363d8','#f58231','#911eb4',
+  '#42d4f4','#f032e6','#bfef45','#fabed4','#469990',
+  '#dcbeff','#9a6324','#fffac8','#800000','#aaffc3',
+  '#808000','#ffd8b1','#000075','#a9a9a9','#e6beff',
+];
+
+const canvas     = document.getElementById('canvas');
+const ctx        = canvas.getContext('2d');
+const canvasWrap = document.getElementById('canvas-wrap');
+const dropZone   = document.getElementById('drop-zone');
+const fileInput  = document.getElementById('file-input');
+const btnPredict = document.getElementById('btn-predict');
+const status     = document.getElementById('status');
+const resultsDiv = document.getElementById('results');
+const scoreInput = document.getElementById('score-input');
+const iouInput   = document.getElementById('iou-input');
+const scoreLabel = document.getElementById('score-label');
+const iouLabel   = document.getElementById('iou-label');
+const classesInput = document.getElementById('classes-input');
+const btnReupload  = document.getElementById('btn-reupload');
+
+let currentFile = null;
+let currentImg  = null;
+
+// ── slider labels ────────────────────────────────────────────────────────────
+scoreInput.addEventListener('input', () => scoreLabel.textContent = scoreInput.value);
+iouInput.addEventListener('input', () => iouLabel.textContent = iouInput.value);
+
+// ── reupload ─────────────────────────────────────────────────────────────────
+btnReupload.addEventListener('click', () => {
+  currentFile = null;
+  currentImg = null;
+  btnPredict.disabled = true;
+  btnReupload.style.display = 'none';
+  canvasWrap.style.display = 'none';
+  dropZone.style.display = 'flex';
+  resultsDiv.innerHTML = '';
+  status.textContent = '';
+  fileInput.value = '';
+});
+
+// ── file handling ────────────────────────────────────────────────────────────
+dropZone.addEventListener('click', () => fileInput.click());
+
+dropZone.addEventListener('dragover', e => {
+  e.preventDefault();
+  dropZone.classList.add('dragover');
+});
+
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+
+fileInput.addEventListener('change', () => {
+  if (fileInput.files.length) handleFile(fileInput.files[0]);
+});
+
+function handleFile(file) {
+  if (!file.type.startsWith('image/')) {
+    status.textContent = 'Please select an image file.';
+    return;
+  }
+  currentFile = file;
+  btnPredict.disabled = false;
+  resultsDiv.innerHTML = '';
+  status.textContent = '';
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      currentImg = img;
+      drawImage(img);
+      dropZone.style.display = 'none';
+      canvasWrap.style.display = 'block';
+      btnReupload.style.display = '';
+    };
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function drawImage(img) {
+  canvas.width  = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  ctx.drawImage(img, 0, 0);
+}
+
+// ── predict ──────────────────────────────────────────────────────────────────
+btnPredict.addEventListener('click', predict);
+
+async function predict() {
+  if (!currentFile) return;
+
+  btnPredict.disabled = true;
+  status.textContent = 'Running inference…';
+  resultsDiv.innerHTML = '';
+
+  const form = new FormData();
+  form.append('file', currentFile);
+  form.append('score_threshold', scoreInput.value);
+  form.append('iou_threshold', iouInput.value);
+  if (classesInput.value.trim()) {
+    form.append('classes', classesInput.value.trim());
+  }
+
+  try {
+    const res = await fetch('/predict', { method: 'POST', body: form });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || res.statusText);
+    }
+    const data = await res.json();
+    drawResults(data);
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+  } finally {
+    btnPredict.disabled = false;
+  }
+}
+
+// ── color for class ──────────────────────────────────────────────────────────
+function classColor(classId) {
+  return BOX_COLORS[classId % BOX_COLORS.length];
+}
+
+// ── draw results ─────────────────────────────────────────────────────────────
+function drawResults(data) {
+  drawImage(currentImg);
+
+  const W = canvas.width;
+  const lineWidth = Math.max(2, W / 300);
+  const fontSize  = Math.max(13, W / 50);
+
+  data.predictions.forEach((p, i) => {
+    const color = classColor(p.class_id);
+    drawBox(p.box, color, lineWidth);
+
+    const label = `${p.class_name} ${(p.confidence * 100).toFixed(1)}%`;
+    const x = p.box[0];
+    const y = p.box[1];
+
+    ctx.font = `bold ${fontSize}px system-ui, sans-serif`;
+    const tw = ctx.measureText(label).width;
+    const pad = 4;
+    const lh = fontSize + pad * 2;
+    const labelY = y - lh < 0 ? y : y - lh;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(x, labelY, tw + pad * 2, lh);
+
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, x + pad, labelY + fontSize);
+  });
+
+  // summary
+  status.textContent = `Detected ${data.total_detected} object(s)`;
+
+  // legend
+  const seenClasses = new Map();
+  data.predictions.forEach(p => {
+    if (!seenClasses.has(p.class_id)) {
+      seenClasses.set(p.class_id, p.class_name);
+    }
+  });
+
+  resultsDiv.innerHTML = '';
+
+  if (seenClasses.size > 0) {
+    const legend = document.createElement('div');
+    legend.className = 'legend';
+    seenClasses.forEach((name, id) => {
+      const item = document.createElement('div');
+      item.className = 'legend-item';
+      item.innerHTML = `<div class="legend-swatch" style="background:${classColor(id)}"></div>${name}`;
+      legend.appendChild(item);
+    });
+    resultsDiv.appendChild(legend);
+  }
+
+  if (data.predictions.length === 0) {
+    resultsDiv.innerHTML = '<div class="summary">No objects detected.</div>';
+    return;
+  }
+
+  // result cards
+  data.predictions.forEach((p, i) => {
+    const color = classColor(p.class_id);
+    const card = document.createElement('div');
+    card.className = 'result-card';
+    card.innerHTML = `
+      <div class="index" style="background:${color}">${i + 1}</div>
+      <div class="details">
+        <div><span class="field">Class </span><span class="value">${p.class_name}</span></div>
+        <div><span class="field">Confidence </span><span class="value">${(p.confidence * 100).toFixed(1)}%</span></div>
+        <div><span class="field">Box </span><span class="value">[${p.box.map(v => v.toFixed(0)).join(', ')}]</span></div>
+      </div>
+    `;
+    // highlight box on hover
+    card.addEventListener('mouseenter', () => {
+      drawImage(currentImg);
+      data.predictions.forEach((pp, j) => {
+        const alpha = j === i ? 1 : 0.15;
+        drawBox(pp.box, classColor(pp.class_id), lineWidth, alpha);
+      });
+      // redraw label for hovered
+      const label = `${p.class_name} ${(p.confidence * 100).toFixed(1)}%`;
+      const x = p.box[0], y = p.box[1];
+      ctx.font = `bold ${fontSize}px system-ui, sans-serif`;
+      const tw = ctx.measureText(label).width;
+      const pad = 4, lh = fontSize + pad * 2;
+      const labelY = y - lh < 0 ? y : y - lh;
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillRect(x, labelY, tw + pad * 2, lh);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(label, x + pad, labelY + fontSize);
+    });
+    card.addEventListener('mouseleave', () => drawResults(data));
+    resultsDiv.appendChild(card);
+  });
+}
+
+function drawBox(box, color, lineWidth, alpha = 1) {
+  const [x1, y1, x2, y2] = box;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lineWidth;
+  ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+  ctx.restore();
+}
+</script>
+</body>
+</html>

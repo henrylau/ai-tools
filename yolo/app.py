@@ -2,11 +2,13 @@ import io
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import cv2
 import numpy as np
 import torch
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import HTMLResponse
 from ultralytics import YOLO
 
 from viewer import router as viewer_router, _dataset_available
@@ -46,6 +48,13 @@ app = FastAPI(
 
 if _dataset_available:
     app.include_router(viewer_router)
+
+TEST_HTML = Path(__file__).parent / "test.html"
+
+
+@app.get("/test", response_class=HTMLResponse)
+async def test_page():
+    return HTMLResponse(TEST_HTML.read_text())
 
 
 @app.get("/health")

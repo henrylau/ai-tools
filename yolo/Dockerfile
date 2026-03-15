@@ -16,7 +16,7 @@ RUN uv pip install --system --no-cache -r requirements.txt
 # Pre-download YOLO26x weights at build time
 RUN python -c "from ultralytics import YOLO; YOLO('yolo26x.pt')"
 
-COPY app.py viewer.py viewer.html train.py .
+COPY app.py viewer.py viewer.html train.py ./
 
 EXPOSE 8000
 

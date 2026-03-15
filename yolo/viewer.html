@@ -114,6 +114,7 @@
   <h1 id="dataset-name">Loading…</h1>
 
   <div class="nav">
+    <select id="dataset-select"></select>
     <select id="split-select"></select>
 
     <button id="btn-prev" disabled>&#8592;</button>
@@ -144,7 +145,9 @@ const PALETTE = [
 const color = id => PALETTE[id % PALETTE.length]
 
 // ── state ─────────────────────────────────────────────────────────────────────
-let info = null          // /viewer/info response
+let datasets = []        // /viewer/datasets response
+let dataset = null       // current dataset name
+let info = null          // /viewer/info response for current dataset
 let split = 'train'
 let index = 0
 
@@ -153,15 +156,22 @@ const ctx      = canvas.getContext('2d')
 const counter  = document.getElementById('counter')
 const status   = document.getElementById('status')
 const jumpInput = document.getElementById('jump-input')
+const datasetSelect = document.getElementById('dataset-select')
+const splitSelect   = document.getElementById('split-select')
 
 // ── fetch helpers ─────────────────────────────────────────────────────────────
-async function fetchInfo() {
-  const res = await fetch('/viewer/info')
+async function fetchDatasets() {
+  const res = await fetch('/viewer/datasets')
+  datasets = await res.json()
+}
+
+async function fetchInfo(ds) {
+  const res = await fetch(`/viewer/info?dataset=${encodeURIComponent(ds)}`)
   info = await res.json()
 }
 
-async function fetchAnnotations(sp, idx) {
-  const res = await fetch(`/viewer/annotations?split=${sp}&index=${idx}`)
+async function fetchAnnotations(ds, sp, idx) {
+  const res = await fetch(`/viewer/annotations?dataset=${encodeURIComponent(ds)}&split=${sp}&index=${idx}`)
   if (!res.ok) throw new Error(await res.text())
   return res.json()
 }
@@ -174,8 +184,8 @@ async function render() {
   jumpInput.value = index + 1
 
   const [ann, img] = await Promise.all([
-    fetchAnnotations(split, index),
-    loadImage(`/viewer/image?split=${split}&index=${index}`),
+    fetchAnnotations(dataset, split, index),
+    loadImage(`/viewer/image?dataset=${encodeURIComponent(dataset)}&split=${split}&index=${index}`),
   ])
 
   // size canvas to natural image size
@@ -247,6 +257,27 @@ function renderLegend(annotations) {
   }
 }
 
+// ── dataset switching ────────────────────────────────────────────────────────
+async function switchDataset(name) {
+  dataset = name
+  await fetchInfo(dataset)
+  document.getElementById('dataset-name').textContent = dataset
+
+  // rebuild split selector
+  splitSelect.innerHTML = ''
+  for (const [sp, count] of Object.entries(info.splits)) {
+    const opt = document.createElement('option')
+    opt.value = sp
+    opt.textContent = `${sp} (${count})`
+    splitSelect.appendChild(opt)
+  }
+  split = splitSelect.value
+  index = 0
+  render()
+}
+
+datasetSelect.addEventListener('change', e => switchDataset(e.target.value))
+
 // ── navigation ────────────────────────────────────────────────────────────────
 function go(delta) {
   const total = info.splits[split] ?? 0
@@ -272,7 +303,7 @@ jumpInput.addEventListener('change', () => {
   }
 })
 
-document.getElementById('split-select').addEventListener('change', e => {
+splitSelect.addEventListener('change', e => {
   split = e.target.value
   index = 0
   render()
@@ -280,20 +311,22 @@ document.getElementById('split-select').addEventListener('change', e => {
 
 // ── init ──────────────────────────────────────────────────────────────────────
 async function init() {
-  await fetchInfo()
+  await fetchDatasets()
 
-  document.getElementById('dataset-name').textContent = info.name
-
-  const sel = document.getElementById('split-select')
-  for (const [sp, count] of Object.entries(info.splits)) {
-    const opt = document.createElement('option')
-    opt.value = sp
-    opt.textContent = `${sp} (${count})`
-    sel.appendChild(opt)
+  if (datasets.length === 0) {
+    status.textContent = 'No datasets found'
+    return
   }
-  split = sel.value
 
-  render()
+  // populate dataset selector
+  for (const ds of datasets) {
+    const opt = document.createElement('option')
+    opt.value = ds.name
+    opt.textContent = ds.name
+    datasetSelect.appendChild(opt)
+  }
+
+  await switchDataset(datasets[0].name)
 }
 
 init()

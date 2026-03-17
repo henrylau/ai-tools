@@ -10,6 +10,7 @@ Usage:
 """
 
 import argparse
+import json
 import os
 import random
 import shutil
@@ -18,7 +19,7 @@ import yaml
 from ultralytics import YOLO
 
 
-def prepare_dataset(input_path, output_path=None, train_ratio=0.8, seed=42):
+def prepare_dataset(input_path, output_path=None, train_ratio=0.8, seed=42, classes_yaml=None):
     """
     Prepare a dataset from YOLOv8 format and split into train/val sets.
 
@@ -86,17 +87,44 @@ def prepare_dataset(input_path, output_path=None, train_ratio=0.8, seed=42):
             shutil.copy2(img_path, os.path.join(output_path, "images", subset, os.path.basename(img_path)))
             shutil.copy2(lbl_path, os.path.join(output_path, "labels", subset, os.path.basename(lbl_path)))
 
-    # Read class names from existing yaml if present, otherwise use generic names
+    # Read class names from Label Studio notes.json or existing yaml
     class_names = None
-    for yaml_candidate in glob.glob(os.path.join(input_path, "*.yaml")) + glob.glob(os.path.join(input_path, "*.yml")):
-        with open(yaml_candidate) as f:
-            existing = yaml.safe_load(f)
-        if existing and "names" in existing:
-            class_names = existing["names"]
+
+    # Check for Label Studio notes.json first
+    notes_files = glob.glob(os.path.join(input_path, "**", "notes.json"), recursive=True)
+    for notes_path in notes_files:
+        with open(notes_path) as f:
+            notes = json.load(f)
+        if isinstance(notes, dict) and "categories" in notes:
+            # Label Studio format: {"categories": [{"id": 0, "name": "cat"}, ...]}
+            class_names = {cat["id"]: cat["name"] for cat in notes["categories"]}
+            print(f"Using class names from: {notes_path}")
+            print(f"Classes: {class_names}")
+            break
+        elif isinstance(notes, list):
+            # Simple list format: ["cat", "dog", ...]
+            class_names = {i: name for i, name in enumerate(notes)}
+            print(f"Using class names from: {notes_path}")
+            print(f"Classes: {class_names}")
             break
 
+    # Fallback: check for yaml/yml files
     if class_names is None:
-        # Detect number of classes from label files
+        yaml_files = glob.glob(os.path.join(input_path, "**", "*.yaml"), recursive=True) + \
+                     glob.glob(os.path.join(input_path, "**", "*.yml"), recursive=True)
+        for yaml_candidate in yaml_files:
+            with open(yaml_candidate) as f:
+                existing = yaml.safe_load(f)
+            if existing and "names" in existing:
+                class_names = existing["names"]
+                if isinstance(class_names, list):
+                    class_names = {i: name for i, name in enumerate(class_names)}
+                print(f"Using class names from: {yaml_candidate}")
+                print(f"Classes: {class_names}")
+                break
+
+    if class_names is None:
+        print("WARNING: No notes.json or YAML with class names found in dataset folder.")
         max_class = -1
         for _, lbl_path in paired:
             with open(lbl_path) as f:

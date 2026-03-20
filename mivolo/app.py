@@ -136,13 +136,22 @@ def estimate_face_from_person(person_box, image_shape):
     return None
 
 
-def run_mivolo(face_crop, body_crop):
-    """Run MiVoLo v2 inference on a single face/body pair."""
-    faces_list = [face_crop] if face_crop is not None else [None]
-    bodies_list = [body_crop] if body_crop is not None else [None]
+def run_mivolo_batch(face_crops, body_crops):
+    """Run MiVoLo v2 inference on a batch of face/body pairs.
 
-    faces_input = image_processor(images=faces_list)["pixel_values"]
-    body_input = image_processor(images=bodies_list)["pixel_values"]
+    Args:
+        face_crops: list of numpy arrays (or None for missing faces)
+        body_crops: list of numpy arrays (or None for missing bodies)
+
+    Returns:
+        list of dicts with age, gender, gender_confidence for each input pair
+    """
+    assert len(face_crops) == len(body_crops)
+    if not face_crops:
+        return []
+
+    faces_input = image_processor(images=face_crops)["pixel_values"]
+    body_input = image_processor(images=body_crops)["pixel_values"]
 
     faces_input = faces_input.to(dtype=mivolo_model.dtype, device=mivolo_model.device)
     body_input = body_input.to(dtype=mivolo_model.dtype, device=mivolo_model.device)
@@ -150,12 +159,15 @@ def run_mivolo(face_crop, body_crop):
     with torch.no_grad():
         output = mivolo_model(faces_input=faces_input, body_input=body_input)
 
-    age = round(output.age_output[0].item(), 1)
     id2label = mivolo_config.gender_id2label
-    gender = id2label[output.gender_class_idx[0].item()]
-    gender_confidence = round(output.gender_probs[0].item() * 100, 1)
-
-    return {"age": age, "gender": gender, "gender_confidence": gender_confidence}
+    results = []
+    for i in range(len(face_crops)):
+        results.append({
+            "age": round(output.age_output[i].item(), 1),
+            "gender": id2label[output.gender_class_idx[i].item()],
+            "gender_confidence": round(output.gender_probs[i].item() * 100, 1),
+        })
+    return results
 
 
 @app.get("/health")
@@ -204,10 +216,18 @@ async def predict(
     if not persons and not faces:
         return {"predictions": [], "message": "No persons or faces detected"}
 
-    results = []
     used_faces = set()
 
-    # Process each detected person
+    # -- Collect crops and metadata for batched inference --
+    # Group 1: person+face pairs (both face and body crops)
+    pf_face_crops = []
+    pf_body_crops = []
+    pf_meta = []  # (person_box, matched_face_or_None)
+
+    # Group 2: face-only detections (no matched person body)
+    fo_face_crops = []
+    fo_meta = []  # face box coords
+
     for person_box in persons:
         matched_face = None
         if use_faces:
@@ -217,7 +237,6 @@ async def predict(
                     used_faces.add(i)
                     break
 
-        # If no face detected, estimate from person box
         if matched_face is None and use_faces:
             est = estimate_face_from_person(person_box, image.shape)
             if est:
@@ -231,28 +250,41 @@ async def predict(
         px1, py1, px2, py2, _ = person_box
         body_crop = image[py1:py2, px1:px2]
 
-        try:
-            prediction = run_mivolo(face_crop, body_crop)
-            prediction["person_box"] = [px1, py1, px2, py2]
-            if matched_face:
-                prediction["face_box"] = list(matched_face[:4])
-            results.append(prediction)
-        except Exception as e:
-            logger.warning("MiVoLo inference failed for a person: %s", e)
+        pf_face_crops.append(face_crop)
+        pf_body_crops.append(body_crop)
+        pf_meta.append((person_box, matched_face))
 
-    # Process unmatched faces (no person body found)
     if use_faces:
         for i, face in enumerate(faces):
             if i in used_faces:
                 continue
             fx1, fy1, fx2, fy2, _ = face
-            face_crop = image[fy1:fy2, fx1:fx2]
-            try:
-                prediction = run_mivolo(face_crop, None)
-                prediction["face_box"] = [fx1, fy1, fx2, fy2]
-                results.append(prediction)
-            except Exception as e:
-                logger.warning("MiVoLo inference failed for a face: %s", e)
+            fo_face_crops.append(image[fy1:fy2, fx1:fx2])
+            fo_meta.append(face)
+
+    # -- Run batched inference --
+    results = []
+
+    if pf_face_crops:
+        try:
+            preds = run_mivolo_batch(pf_face_crops, pf_body_crops)
+            for pred, (person_box, matched_face) in zip(preds, pf_meta):
+                px1, py1, px2, py2, _ = person_box
+                pred["person_box"] = [px1, py1, px2, py2]
+                if matched_face:
+                    pred["face_box"] = list(matched_face[:4])
+                results.append(pred)
+        except Exception as e:
+            logger.warning("MiVoLo batch inference failed for persons: %s", e)
+
+    if fo_face_crops:
+        try:
+            preds = run_mivolo_batch(fo_face_crops, [None] * len(fo_face_crops))
+            for pred, face in zip(preds, fo_meta):
+                pred["face_box"] = list(face[:4])
+                results.append(pred)
+        except Exception as e:
+            logger.warning("MiVoLo batch inference failed for faces: %s", e)
 
     return {
         "predictions": results,

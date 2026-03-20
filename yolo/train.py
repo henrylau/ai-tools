@@ -7,6 +7,7 @@ Usage:
     python train.py --data coco128.yaml      # Use a larger sample dataset
     python train.py --epochs 50 --batch 8    # Custom training parameters
     python train.py --prepare-dataset /path/to/yolov8_dataset  # Prepare & split dataset, then train
+    python train.py --info /path/to/split_dataset              # Print dataset info and exit
 """
 
 import argparse
@@ -54,18 +55,35 @@ def prepare_dataset(input_path, output_path=None, train_ratio=0.8, seed=42, clas
     if not image_files:
         raise ValueError(f"No images found in {images_dir}")
 
-    # Filter to only images that have matching label files
+    # Filter to only images that have matching, non-empty label files
     paired = []
+    skipped_missing = 0
+    skipped_empty = 0
     for img_path in image_files:
         stem = os.path.splitext(os.path.basename(img_path))[0]
         label_path = os.path.join(labels_dir, stem + ".txt")
-        if os.path.isfile(label_path):
-            paired.append((img_path, label_path))
+        if not os.path.isfile(label_path):
+            skipped_missing += 1
+            continue
+        # Skip label files that are empty or contain no actual annotations
+        if os.path.getsize(label_path) == 0:
+            skipped_empty += 1
+            continue
+        with open(label_path) as f:
+            lines = [line.strip() for line in f if line.strip()]
+        if not lines:
+            skipped_empty += 1
+            continue
+        paired.append((img_path, label_path))
 
     if not paired:
         raise ValueError("No image/label pairs found. Ensure label .txt filenames match image filenames.")
 
     print(f"Found {len(paired)} image/label pairs (out of {len(image_files)} images)")
+    if skipped_missing:
+        print(f"Skipped {skipped_missing} images with no label file")
+    if skipped_empty:
+        print(f"Skipped {skipped_empty} images with empty labels (no annotations)")
 
     # Shuffle and split
     random.seed(seed)
@@ -148,7 +166,67 @@ def prepare_dataset(input_path, output_path=None, train_ratio=0.8, seed=42, clas
 
     print(f"Dataset prepared at: {output_path}")
     print(f"Dataset config: {dataset_yaml}")
+
+    dataset_info(output_path)
+
     return dataset_yaml
+
+
+def dataset_info(dataset_path):
+    """Print dataset path, split sizes, and per-class label counts."""
+    dataset_path = os.path.abspath(dataset_path)
+    dataset_yaml = os.path.join(dataset_path, "dataset.yaml")
+
+    if not os.path.isfile(dataset_yaml):
+        print(f"Error: {dataset_yaml} not found. Run --prepare-dataset first.")
+        return
+
+    with open(dataset_yaml) as f:
+        config = yaml.safe_load(f)
+
+    class_names = config.get("names", {})
+    if isinstance(class_names, list):
+        class_names = {i: name for i, name in enumerate(class_names)}
+
+    print(f"\n=== Dataset Info ===")
+    print(f"  Path: {dataset_path}")
+    print(f"  Config: {dataset_yaml}")
+    print()
+
+    for split in ("train", "val"):
+        img_dir = os.path.join(dataset_path, "images", split)
+        lbl_dir = os.path.join(dataset_path, "labels", split)
+
+        img_count = len(os.listdir(img_dir)) if os.path.isdir(img_dir) else 0
+
+        class_counts = {cid: 0 for cid in class_names}
+        total_labels = 0
+        empty_labels = 0
+        if os.path.isdir(lbl_dir):
+            for fname in os.listdir(lbl_dir):
+                if not fname.endswith(".txt"):
+                    continue
+                lbl_path = os.path.join(lbl_dir, fname)
+                lines = open(lbl_path).read().strip().split("\n")
+                lines = [l for l in lines if l.strip()]
+                if not lines:
+                    empty_labels += 1
+                    continue
+                for line in lines:
+                    parts = line.split()
+                    if parts:
+                        cid = int(parts[0])
+                        class_counts[cid] = class_counts.get(cid, 0) + 1
+                        total_labels += 1
+
+        print(f"  {split}:")
+        print(f"    Images: {img_count}")
+        print(f"    Labels: {total_labels}")
+        if empty_labels:
+            print(f"    Empty label files: {empty_labels}")
+        for cid, name in class_names.items():
+            print(f"      {name} (class {cid}): {class_counts.get(cid, 0)}")
+        print()
 
 
 def main():
@@ -166,7 +244,13 @@ def main():
     parser.add_argument("--split-ratio", type=float, default=0.8, help="Train/val split ratio (default: 0.8)")
     parser.add_argument("--split-output", type=str, default=None, help="Output path for split dataset (default: INPUT_PATH/split)")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for dataset split")
+    parser.add_argument("--info", type=str, default=None, metavar="DATASET_PATH",
+                        help="Print dataset info (path, image counts, label counts) and exit")
     args = parser.parse_args()
+
+    if args.info:
+        dataset_info(args.info)
+        return
 
     # Prepare dataset if requested
     if args.prepare_dataset:

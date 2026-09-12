@@ -14,9 +14,17 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 WORKDIR /app
 
 COPY requirements.txt .
-RUN uv pip install --system --no-cache "setuptools<70" wheel "cython<3" \
+# MiVOLO ships a bare setup.py whose first lines import pkg_resources, which
+# setuptools removed in 82. Pinning setuptools before requirements.txt does not
+# help — resolving requirements.txt pulls a newer setuptools over the top of it.
+# Constrain MiVOLO's *build* environment instead, so it builds against a
+# setuptools that still has pkg_resources while the runtime keeps the current one.
+RUN echo "setuptools<82" > /tmp/build-constraints.txt \
+    && uv pip install --system --no-cache wheel "cython<3" \
     && uv pip install --system --no-cache -r requirements.txt \
-    && uv pip install --system --no-cache --no-deps --no-build-isolation git+https://github.com/WildChlamydia/MiVOLO.git \
+    && uv pip install --system --no-cache --no-deps \
+        --build-constraints /tmp/build-constraints.txt \
+        git+https://github.com/WildChlamydia/MiVOLO.git \
     && apt-get purge -y --auto-remove build-essential \
     && rm -rf /var/lib/apt/lists/*
 

@@ -3,18 +3,79 @@ name: Build and Push Docker Images
 on:
   push:
     branches: [main]
-    paths:
-      - 'mivolo/**'
-      - 'yolo/**'
-      - 'embedding/**'
-      - '.github/workflows/docker-build.yml'
   workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
 
 jobs:
+  select:
+    name: Select services to build
+    runs-on: ubuntu-latest
+    outputs:
+      targets: ${{ steps.select.outputs.targets }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Select services to build
+        id: select
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          # Every build target: the service directory it is built from, plus the
+          # variant and build args that make it differ from that service's
+          # default image. A service is rebuilt only when its own directory
+          # changes, so this list is the one place to register a new service.
+          targets='[
+            {"service":"mivolo"},
+            {"service":"yolo"},
+            {"service":"embedding"},
+            {"service":"embedding","variant":"gpu","build-args":"ONNXRUNTIME_PACKAGE=onnxruntime-gpu"}
+          ]'
+
+          changed=""
+          build_all=false
+
+          if [ "$EVENT_NAME" != "push" ]; then
+            echo "Not a push — building every service."
+            build_all=true
+          elif ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            # First push to the branch, or a force push that dropped the old tip
+            echo "No usable base commit (${BEFORE}) — building every service."
+            build_all=true
+          else
+            changed=$(git diff --name-only "$BEFORE" "$SHA")
+            echo "Changed files:"; echo "$changed" | sed 's/^/  /'
+            if echo "$changed" | grep -qx '.github/workflows/docker-build.yml'; then
+              echo "The build workflow itself changed — building every service."
+              build_all=true
+            fi
+          fi
+
+          if [ "$build_all" = true ]; then
+            selected=$(echo "$targets" | jq -c .)
+          else
+            dirs=$(echo "$changed" | awk -F/ 'NF > 1 {print $1}' | sort -u)
+            echo "Changed service directories: ${dirs:-<none>}"
+            selected=$(echo "$targets" | jq -c --arg dirs "$dirs" \
+              '[ .[] | select(.service as $s | $dirs | split("\n") | index($s)) ]')
+          fi
+
+          echo "Building: $selected"
+          echo "targets=$selected" >> "$GITHUB_OUTPUT"
+
   build-and-push:
+    name: Build ${{ matrix.service }}${{ matrix.variant && format(' ({0})', matrix.variant) || '' }}
+    needs: select
+    if: needs.select.outputs.targets != '[]'
     runs-on: ubuntu-latest
 
     permissions:
@@ -24,16 +85,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - service: mivolo
-          - service: yolo
-          - service: embedding
-          # The default embedding image is CPU-only — onnxruntime has no CUDA
-          # support compiled in. This variant carries onnxruntime-gpu and the
-          # CUDA libraries, and is published as :latest-gpu.
-          - service: embedding
-            variant: gpu
-            build-args: ONNXRUNTIME_PACKAGE=onnxruntime-gpu
+        include: ${{ fromJSON(needs.select.outputs.targets) }}
 
     steps:
       - name: Checkout repository

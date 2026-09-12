@@ -1,0 +1,34 @@
+services:
+  embedding:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # This service reserves an NVIDIA device below, so it builds the CUDA
+        # image by default. Override with ONNXRUNTIME_PACKAGE=onnxruntime (and
+        # drop the deploy.resources block) to run it on the CPU.
+        ONNXRUNTIME_PACKAGE: ${ONNXRUNTIME_PACKAGE:-onnxruntime-gpu}
+    ports:
+      - "8002:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - MODEL_NAME=${MODEL_NAME:-buffalo_l}
+    restart: unless-stopped
+    volumes:
+      - model-cache:/root/.insightface
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  model-cache:

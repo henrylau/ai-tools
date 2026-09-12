@@ -1,6 +1,13 @@
 name: Build and Push Docker Images
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'mivolo/**'
+      - 'yolo/**'
+      - 'embedding/**'
+      - '.github/workflows/docker-build.yml'
   workflow_dispatch:
 
 env:
@@ -15,15 +22,22 @@ jobs:
       packages: write
 
     strategy:
+      fail-fast: false
       matrix:
-        service: [mivolo, yolo]
+        include:
+          - service: mivolo
+          - service: yolo
+          - service: embedding
+          # The default embedding image is CPU-only — onnxruntime has no CUDA
+          # support compiled in. This variant carries onnxruntime-gpu and the
+          # CUDA libraries, and is published as :latest-gpu.
+          - service: embedding
+            variant: gpu
+            build-args: ONNXRUNTIME_PACKAGE=onnxruntime-gpu
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -40,6 +54,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.service }}
+          flavor: |
+            suffix=${{ matrix.variant && format('-{0}', matrix.variant) || '' }},onlatest=true
           tags: |
             type=sha
             type=ref,event=branch
@@ -49,9 +65,10 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.service }}
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
+          build-args: ${{ matrix.build-args }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.service }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          cache-from: type=gha,scope=${{ matrix.service }}${{ matrix.variant && format('-{0}', matrix.variant) || '' }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}${{ matrix.variant && format('-{0}', matrix.variant) || '' }}

@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Face Embedding Test</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, sans-serif;
+      background: #111;
+      color: #eee;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 24px;
+      gap: 16px;
+    }
+
+    h1 { font-size: 1.1rem; font-weight: 600; color: #aaa; }
+    h2 { font-size: 0.9rem; font-weight: 600; color: #888; margin-bottom: 8px; }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    label { font-size: 0.85rem; color: #999; display: flex; align-items: center; gap: 6px; }
+
+    select, button, input[type=file], input[type=range] {
+      background: #222;
+      color: #eee;
+      border: 1px solid #444;
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 0.875rem;
+      cursor: pointer;
+    }
+
+    button { min-width: 80px; }
+    button:hover { background: #333; }
+    button:disabled { opacity: 0.3; cursor: default; }
+    button.primary { background: #2563eb; border-color: #2563eb; }
+    button.primary:hover { background: #1d4ed8; }
+    button.primary:disabled { background: #222; border-color: #444; }
+
+    .drop-zone {
+      width: 100%;
+      max-width: 960px;
+      min-height: 160px;
+      border: 2px dashed #444;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: border-color 0.2s;
+      padding: 12px;
+    }
+
+    .drop-zone.dragover { border-color: #2563eb; }
+    .drop-zone p { color: #666; font-size: 0.9rem; text-align: center; }
+
+    #file-input { display: none; }
+
+    #clips {
+      width: 100%;
+      max-width: 960px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 10px;
+    }
+
+    .clip {
+      background: #1a1a1a;
+      border-radius: 8px;
+      padding: 8px;
+      position: relative;
+      font-size: 0.75rem;
+      color: #999;
+    }
+
+    .clip img {
+      width: 100%;
+      aspect-ratio: 1;
+      object-fit: cover;
+      border-radius: 6px;
+      background: #000;
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .clip .name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .clip .remove {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      background: rgba(0,0,0,0.75);
+      border: none;
+      color: #eee;
+      border-radius: 50%;
+      width: 22px;
+      height: 22px;
+      min-width: 0;
+      padding: 0;
+      line-height: 1;
+      font-size: 0.9rem;
+    }
+
+    .badge {
+      display: inline-block;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      margin-top: 4px;
+    }
+
+    .badge.aligned { background: #14532d; color: #86efac; }
+    .badge.fallback { background: #713f12; color: #fde68a; }
+    .badge.error { background: #7f1d1d; color: #fca5a5; }
+
+    #results { width: 100%; max-width: 960px; }
+
+    table {
+      border-collapse: collapse;
+      font-size: 0.8rem;
+      width: 100%;
+      margin-bottom: 20px;
+    }
+
+    th, td {
+      border: 1px solid #2a2a2a;
+      padding: 6px 10px;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    th { color: #888; font-weight: 600; background: #1a1a1a; }
+    td.mono { font-family: ui-monospace, monospace; color: #bbb; }
+    td.self { color: #555; }
+
+    .vec {
+      font-family: ui-monospace, monospace;
+      color: #666;
+      font-size: 0.75rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 380px;
+    }
+
+    #status { font-size: 0.85rem; color: #666; min-height: 1.2em; }
+  </style>
+</head>
+<body>
+
+<h1>Face Embedding (buffalo_l)</h1>
+
+<div class="controls">
+  <label>
+    Det threshold
+    <input type="range" id="det-input" min="0.1" max="0.9" step="0.05" value="0.5" />
+    <span id="det-label">0.5</span>
+  </label>
+
+  <label><input type="checkbox" id="align-input" checked /> Align</label>
+  <label><input type="checkbox" id="normalize-input" checked /> Normalize</label>
+  <label><input type="checkbox" id="require-input" /> Require face</label>
+
+  <button class="primary" id="btn-embed" disabled>Embed</button>
+  <button id="btn-clear" disabled>Clear</button>
+</div>
+
+<div class="drop-zone" id="drop-zone">
+  <p>Drop face clips here or click to upload — multiple files supported</p>
+  <input type="file" id="file-input" accept="image/*" multiple />
+</div>
+
+<div id="clips"></div>
+
+<div id="status"></div>
+<div id="results"></div>
+
+<script>
+const dropZone   = document.getElementById('drop-zone');
+const fileInput  = document.getElementById('file-input');
+const clipsDiv   = document.getElementById('clips');
+const resultsDiv = document.getElementById('results');
+const statusEl   = document.getElementById('status');
+const btnEmbed   = document.getElementById('btn-embed');
+const btnClear   = document.getElementById('btn-clear');
+const detInput   = document.getElementById('det-input');
+const detLabel   = document.getElementById('det-label');
+
+let files = [];
+
+// ── slider label ─────────────────────────────────────────────────────────────
+detInput.addEventListener('input', () => detLabel.textContent = detInput.value);
+
+// ── file handling ────────────────────────────────────────────────────────────
+dropZone.addEventListener('click', () => fileInput.click());
+
+dropZone.addEventListener('dragover', e => {
+  e.preventDefault();
+  dropZone.classList.add('dragover');
+});
+
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  addFiles(e.dataTransfer.files);
+});
+
+fileInput.addEventListener('change', () => {
+  addFiles(fileInput.files);
+  fileInput.value = '';
+});
+
+btnClear.addEventListener('click', () => {
+  files = [];
+  renderClips();
+  resultsDiv.innerHTML = '';
+  statusEl.textContent = '';
+});
+
+function addFiles(fileList) {
+  for (const f of fileList) {
+    if (f.type.startsWith('image/')) files.push(f);
+  }
+  resultsDiv.innerHTML = '';
+  statusEl.textContent = '';
+  renderClips();
+}
+
+function renderClips(byIndex = {}) {
+  clipsDiv.innerHTML = '';
+  files.forEach((f, i) => {
+    const info = byIndex[i];
+    const div = document.createElement('div');
+    div.className = 'clip';
+
+    let badge = '';
+    if (info && info.error) {
+      badge = `<span class="badge error">${info.error}</span>`;
+    } else if (info) {
+      badge = info.aligned
+        ? `<span class="badge aligned">aligned ${info.det_score}</span>`
+        : '<span class="badge fallback">no face — raw clip</span>';
+    }
+
+    div.innerHTML = `
+      <img src="${URL.createObjectURL(f)}" alt="${f.name}" />
+      <div class="name" title="${f.name}">${f.name}</div>
+      ${badge}
+      <button class="remove" title="Remove">&times;</button>
+    `;
+    div.querySelector('.remove').addEventListener('click', () => {
+      files.splice(i, 1);
+      resultsDiv.innerHTML = '';
+      renderClips();
+    });
+    clipsDiv.appendChild(div);
+  });
+
+  btnEmbed.disabled = files.length === 0;
+  btnClear.disabled = files.length === 0;
+}
+
+// ── embed ────────────────────────────────────────────────────────────────────
+btnEmbed.addEventListener('click', embed);
+
+async function embed() {
+  if (!files.length) return;
+
+  btnEmbed.disabled = true;
+  statusEl.textContent = `Embedding ${files.length} clip(s)…`;
+  resultsDiv.innerHTML = '';
+
+  const form = new FormData();
+  files.forEach(f => form.append('files', f));
+  form.append('det_threshold', detInput.value);
+  form.append('align', document.getElementById('align-input').checked);
+  form.append('normalize', document.getElementById('normalize-input').checked);
+  form.append('require_face', document.getElementById('require-input').checked);
+
+  const started = performance.now();
+  try {
+    const res = await fetch('/embed', { method: 'POST', body: form });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || res.statusText);
+    }
+    const data = await res.json();
+    const ms = Math.round(performance.now() - started);
+    render(data, ms);
+  } catch (e) {
+    statusEl.textContent = 'Error: ' + e.message;
+  } finally {
+    btnEmbed.disabled = false;
+  }
+}
+
+function render(data, ms) {
+  const byIndex = {};
+  data.embeddings.forEach(e => byIndex[e.index] = e);
+  data.errors.forEach(e => byIndex[e.index] = e);
+  renderClips(byIndex);
+
+  statusEl.textContent =
+    `Embedded ${data.embedded}/${data.total} clip(s) in ${ms} ms` +
+    (data.failed ? ` — ${data.failed} failed` : '');
+
+  resultsDiv.innerHTML = '';
+  if (!data.embeddings.length) return;
+
+  // ── embeddings table ───────────────────────────────────────────────────────
+  const rows = data.embeddings.map(e => `
+    <tr>
+      <td>${e.index}</td>
+      <td>${e.filename ?? ''}</td>
+      <td>${e.aligned ? 'aligned' : 'raw clip'}</td>
+      <td class="mono">${e.det_score ?? '—'}</td>
+      <td class="mono">${e.norm}</td>
+      <td class="mono">${e.dim}</td>
+      <td class="vec">[${e.embedding.slice(0, 8).map(v => v.toFixed(4)).join(', ')}, …]</td>
+    </tr>
+  `).join('');
+
+  let html = `
+    <h2>Embeddings</h2>
+    <table>
+      <tr><th>#</th><th>File</th><th>Mode</th><th>Det score</th><th>Norm</th><th>Dim</th><th>Vector</th></tr>
+      ${rows}
+    </table>
+  `;
+
+  // ── cosine similarity matrix ───────────────────────────────────────────────
+  if (data.embeddings.length > 1) {
+    const head = data.embeddings.map(e => `<th>${e.index}</th>`).join('');
+    const body = data.embeddings.map((a, i) => {
+      const cells = data.embeddings.map((b, j) => {
+        if (i === j) return '<td class="self">—</td>';
+        const s = cosine(a.embedding, b.embedding);
+        const color = s >= 0.6 ? '#86efac' : s >= 0.4 ? '#fde68a' : '#888';
+        return `<td class="mono" style="color:${color}">${s.toFixed(3)}</td>`;
+      }).join('');
+      return `<tr><th>${a.index} ${a.filename ?? ''}</th>${cells}</tr>`;
+    }).join('');
+
+    html += `
+      <h2>Cosine similarity — same identity is typically &ge; 0.4</h2>
+      <table><tr><th></th>${head}</tr>${body}</table>
+    `;
+  }
+
+  // ── errors ─────────────────────────────────────────────────────────────────
+  if (data.errors.length) {
+    const errRows = data.errors.map(e => `
+      <tr><td>${e.index}</td><td>${e.filename ?? ''}</td><td>${e.error}</td></tr>
+    `).join('');
+    html += `<h2>Errors</h2><table><tr><th>#</th><th>File</th><th>Error</th></tr>${errRows}</table>`;
+  }
+
+  resultsDiv.innerHTML = html;
+}
+
+function cosine(a, b) {
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  return dot / (Math.sqrt(na) * Math.sqrt(nb) || 1);
+}
+</script>
+</body>
+</html>

@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
     git \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
@@ -13,9 +14,11 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 WORKDIR /app
 
 COPY requirements.txt .
-RUN uv pip install --system --no-cache "setuptools<70" \
+RUN uv pip install --system --no-cache "setuptools<70" wheel "cython<3" \
     && uv pip install --system --no-cache -r requirements.txt \
-    && uv pip install --system --no-cache --no-deps --no-build-isolation git+https://github.com/WildChlamydia/MiVOLO.git
+    && uv pip install --system --no-cache --no-deps --no-build-isolation git+https://github.com/WildChlamydia/MiVOLO.git \
+    && apt-get purge -y --auto-remove build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY app.py test.html ./
 

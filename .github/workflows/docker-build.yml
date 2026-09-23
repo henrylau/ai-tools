@@ -38,7 +38,9 @@ jobs:
             {"service":"mivolo"},
             {"service":"yolo"},
             {"service":"embedding"},
-            {"service":"embedding","variant":"gpu","build-args":"ONNXRUNTIME_PACKAGE=onnxruntime-gpu"}
+            {"service":"embedding","variant":"gpu","build-args":"ONNXRUNTIME_PACKAGE=onnxruntime-gpu"},
+            {"service":"llm2jev"},
+            {"service":"llm2jev","variant":"transformers","dockerfile":"Dockerfile.transformers"}
           ]'
 
           changed=""
@@ -117,6 +119,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.service }}
+          file: ${{ matrix.service }}/${{ matrix.dockerfile || 'Dockerfile' }}
           platforms: linux/amd64
           build-args: ${{ matrix.build-args }}
           push: true

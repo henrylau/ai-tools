@@ -1,0 +1,25 @@
+services:
+  llm2jev:
+    build: .
+    image: llm2jev-cuda:latest
+    ports:
+      - "30000:30000"
+    environment:
+      MODEL_ID: huihui-ai/Huihui-Qwen3.5-2B-abliterated
+      MODEL_PATH: /models/huihui-ai/Huihui-Qwen3.5-2B-abliterated
+      SERVED_MODEL_NAME: local-model
+      HOST: 0.0.0.0
+      PORT: "30000"
+      TP_SIZE: "1"
+      MEM_FRACTION_STATIC: "0.85"
+      DOWNLOAD_MODEL_ON_START: "1"
+      # HF_TOKEN: optional, for gated models / higher rate limits
+      # HF_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      - llm2jev-models:/models
+    gpus: all
+    shm_size: "8gb"
+    restart: unless-stopped
+
+volumes:
+  llm2jev-models:

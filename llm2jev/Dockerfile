@@ -53,8 +53,7 @@ RUN git clone --depth 1 --branch "${LLM2JEV_REF}" "${LLM2JEV_REPO}" . \
     && uv venv /opt/venv \
     && . /opt/venv/bin/activate \
     && uv pip install -U pip setuptools wheel \
-    && uv sync --extra sglang \
-    && uv pip install -e . \
+    && uv pip install -e .[sglang] \
     && uv pip install huggingface_hub pillow \
     && rm -rf /root/.cache/uv /root/.cache/pip
 

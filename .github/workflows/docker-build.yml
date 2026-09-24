@@ -4,6 +4,31 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      all:
+        description: Build every service image
+        type: boolean
+        default: false
+      mivolo:
+        description: Build mivolo
+        type: boolean
+        default: false
+      yolo:
+        description: Build yolo
+        type: boolean
+        default: false
+      embedding:
+        description: Build embedding (CPU)
+        type: boolean
+        default: false
+      embedding_gpu:
+        description: Build embedding (GPU)
+        type: boolean
+        default: false
+      llm2jev:
+        description: Build llm2jev
+        type: boolean
+        default: false
 
 env:
   REGISTRY: ghcr.io
@@ -27,46 +52,99 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BEFORE: ${{ github.event.before }}
           SHA: ${{ github.sha }}
+          INPUT_ALL: ${{ inputs.all }}
+          INPUT_MIVOLO: ${{ inputs.mivolo }}
+          INPUT_YOLO: ${{ inputs.yolo }}
+          INPUT_EMBEDDING: ${{ inputs.embedding }}
+          INPUT_EMBEDDING_GPU: ${{ inputs.embedding_gpu }}
+          INPUT_LLM2JEV: ${{ inputs.llm2jev }}
         run: |
           set -euo pipefail
 
           # Every build target: the service directory it is built from, plus the
           # variant and build args that make it differ from that service's
-          # default image. A service is rebuilt only when its own directory
-          # changes, so this list is the one place to register a new service.
+          # default image. A service is rebuilt on push only when its own
+          # directory changes. Register new services here and in the
+          # workflow_dispatch inputs above.
           targets='[
-            {"service":"mivolo"},
-            {"service":"yolo"},
-            {"service":"embedding"},
-            {"service":"embedding","variant":"gpu","build-args":"ONNXRUNTIME_PACKAGE=onnxruntime-gpu"}
+            {"service":"mivolo","key":"mivolo"},
+            {"service":"yolo","key":"yolo"},
+            {"service":"embedding","key":"embedding"},
+            {"service":"embedding","variant":"gpu","build-args":"ONNXRUNTIME_PACKAGE=onnxruntime-gpu","key":"embedding_gpu"},
+            {"service":"llm2jev","key":"llm2jev"}
           ]'
 
-          changed=""
-          build_all=false
+          filter_keys() {
+            # $1 = newline-separated keys (or empty). Empty → [].
+            local keys="$1"
+            echo "$targets" | jq -c --arg keys "$keys" '
+              ($keys | split("\n") | map(select(length > 0))) as $k
+              | [ .[] | select(.key as $id | $k | index($id)) ]
+              | map(del(.key))
+            '
+          }
 
-          if [ "$EVENT_NAME" != "push" ]; then
-            echo "Not a push — building every service."
-            build_all=true
-          elif ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
-            # First push to the branch, or a force push that dropped the old tip
-            echo "No usable base commit (${BEFORE}) — building every service."
-            build_all=true
-          else
-            changed=$(git diff --name-only "$BEFORE" "$SHA")
-            echo "Changed files:"; echo "$changed" | sed 's/^/  /'
-            if echo "$changed" | grep -qx '.github/workflows/docker-build.yml'; then
-              echo "The build workflow itself changed — building every service."
-              build_all=true
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "Manual run — using workflow_dispatch inputs."
+            selected_keys=""
+            if [ "${INPUT_ALL}" = "true" ]; then
+              selected_keys=$(echo "$targets" | jq -r '.[].key')
+            else
+              [ "${INPUT_MIVOLO}" = "true" ] && selected_keys+=$'mivolo\n'
+              [ "${INPUT_YOLO}" = "true" ] && selected_keys+=$'yolo\n'
+              [ "${INPUT_EMBEDDING}" = "true" ] && selected_keys+=$'embedding\n'
+              [ "${INPUT_EMBEDDING_GPU}" = "true" ] && selected_keys+=$'embedding_gpu\n'
+              [ "${INPUT_LLM2JEV}" = "true" ] && selected_keys+=$'llm2jev\n'
             fi
-          fi
+            selected_keys=$(printf '%s' "$selected_keys" | sed '/^$/d')
+            if [ -z "$selected_keys" ]; then
+              echo "::error::Select at least one service, or enable 'Build every service image'."
+              exit 1
+            fi
+            echo "Requested keys:"; echo "$selected_keys" | sed 's/^/  /'
+            selected=$(filter_keys "$selected_keys")
 
-          if [ "$build_all" = true ]; then
-            selected=$(echo "$targets" | jq -c .)
+          elif [ "$EVENT_NAME" = "push" ]; then
+            echo "Push to main — detecting changed services."
+            if ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+              # First push to the branch, or a force push that dropped the old tip
+              echo "No usable base commit (${BEFORE}) — building every service."
+              selected=$(echo "$targets" | jq -c 'map(del(.key))')
+            else
+              changed=$(git diff --name-only "$BEFORE" "$SHA")
+              echo "Changed files:"; echo "$changed" | sed 's/^/  /' || true
+
+              dirs=$(echo "$changed" | awk -F/ 'NF > 1 {print $1}' | sort -u)
+              echo "Changed top-level directories: ${dirs:-<none>}"
+
+              # Map changed service directories to target keys (embedding → both variants)
+              selected_keys=""
+              while IFS= read -r dir; do
+                [ -z "$dir" ] && continue
+                case "$dir" in
+                  mivolo) selected_keys+=$'mivolo\n' ;;
+                  yolo) selected_keys+=$'yolo\n' ;;
+                  embedding)
+                    selected_keys+=$'embedding\n'
+                    selected_keys+=$'embedding_gpu\n'
+                    ;;
+                  llm2jev) selected_keys+=$'llm2jev\n' ;;
+                esac
+              done <<< "$dirs"
+              selected_keys=$(printf '%s' "$selected_keys" | sed '/^$/d' | sort -u)
+
+              if [ -z "$selected_keys" ]; then
+                echo "No service directories changed — nothing to build."
+                selected='[]'
+              else
+                echo "Services to build:"; echo "$selected_keys" | sed 's/^/  /'
+                selected=$(filter_keys "$selected_keys")
+              fi
+            fi
+
           else
-            dirs=$(echo "$changed" | awk -F/ 'NF > 1 {print $1}' | sort -u)
-            echo "Changed service directories: ${dirs:-<none>}"
-            selected=$(echo "$targets" | jq -c --arg dirs "$dirs" \
-              '[ .[] | select(.service as $s | $dirs | split("\n") | index($s)) ]')
+            echo "::error::Unsupported event: $EVENT_NAME"
+            exit 1
           fi
 
           echo "Building: $selected"

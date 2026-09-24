@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LLM2Jev Test</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, sans-serif;
+      background: #111;
+      color: #eee;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 24px;
+      gap: 16px;
+    }
+
+    h1 { font-size: 1.1rem; font-weight: 600; color: #aaa; }
+    h2 { font-size: 0.9rem; font-weight: 600; color: #888; margin-bottom: 8px; }
+
+    .panel {
+      width: 100%;
+      max-width: 960px;
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 10px;
+      padding: 16px;
+    }
+
+    .row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      margin-bottom: 12px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1;
+      min-width: 160px;
+    }
+
+    .field.grow { flex: 2; min-width: 240px; }
+
+    label { font-size: 0.8rem; color: #999; }
+
+    input, textarea, select, button {
+      background: #222;
+      color: #eee;
+      border: 1px solid #444;
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 0.875rem;
+      font-family: inherit;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 100px;
+      resize: vertical;
+      line-height: 1.4;
+    }
+
+    button { cursor: pointer; min-width: 80px; }
+    button:hover { background: #333; }
+    button:disabled { opacity: 0.35; cursor: default; }
+    button.primary { background: #2563eb; border-color: #2563eb; }
+    button.primary:hover { background: #1d4ed8; }
+    button.primary:disabled { background: #222; border-color: #444; }
+    button.ghost { background: transparent; }
+    button.danger { color: #f87171; border-color: #7f1d1d; }
+    button.danger:hover { background: #3f1515; }
+    button.sm { min-width: 0; padding: 4px 10px; font-size: 0.8rem; }
+
+    .questions-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin: 8px 0 12px;
+    }
+
+    .add-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    .question {
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 10px;
+      background: #161616;
+    }
+
+    .question-top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .badge {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      background: #2563eb33;
+      color: #93c5fd;
+      border: 1px solid #2563eb66;
+      border-radius: 999px;
+      padding: 2px 8px;
+    }
+
+    .badge.score { background: #7c3aed33; color: #c4b5fd; border-color: #7c3aed66; }
+    .badge.noul { background: #05966933; color: #6ee7b7; border-color: #05966966; }
+
+    .criteria { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+
+    .criterion {
+      display: grid;
+      grid-template-columns: 1fr 2fr auto;
+      gap: 6px;
+    }
+
+    .criterion.score-row { grid-template-columns: 1fr auto; }
+
+    .drop-zone {
+      border: 2px dashed #444;
+      border-radius: 8px;
+      min-height: 88px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 12px;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: border-color 0.15s;
+    }
+
+    .drop-zone.dragover { border-color: #2563eb; }
+    .drop-zone p { color: #666; font-size: 0.85rem; }
+    .drop-zone img {
+      max-height: 72px;
+      max-width: 120px;
+      border-radius: 6px;
+      object-fit: cover;
+      background: #000;
+    }
+
+    #file-input { display: none; }
+
+    #status {
+      font-size: 0.85rem;
+      color: #666;
+      min-height: 1.2em;
+      width: 100%;
+      max-width: 960px;
+    }
+
+    #status.error { color: #f87171; }
+    #status.ok { color: #6ee7b7; }
+
+    .answer {
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 10px;
+      background: #161616;
+    }
+
+    .answer-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .answer-head h3 { font-size: 0.95rem; font-weight: 600; }
+    .answer-value { font-size: 1.1rem; font-weight: 600; color: #93c5fd; }
+    .meta { font-size: 0.8rem; color: #888; margin-bottom: 8px; }
+
+    .prob-row { margin-bottom: 6px; }
+    .prob-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.8rem;
+      color: #aaa;
+      margin-bottom: 3px;
+    }
+    .prob-track {
+      height: 6px;
+      background: #2a2a2a;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .prob-fill {
+      height: 100%;
+      background: #2563eb;
+      border-radius: 999px;
+    }
+    .prob-row.selected .prob-label { color: #eee; }
+    .prob-row.selected .prob-fill { background: #60a5fa; }
+
+    pre {
+      background: #0d0d0d;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      padding: 12px;
+      overflow: auto;
+      font-size: 0.75rem;
+      color: #bbb;
+      max-height: 360px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    details { margin-top: 8px; }
+    summary { cursor: pointer; color: #888; font-size: 0.85rem; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+
+<h1>LLM2Jev System One API</h1>
+
+<div class="panel">
+  <div class="row">
+    <div class="field grow">
+      <label for="base-url">API base URL (blank = same origin)</label>
+      <input id="base-url" value="" placeholder="http://localhost:30000" />
+    </div>
+    <div class="field">
+      <label for="model">Model</label>
+      <input id="model" value="local-model" list="model-options" />
+      <datalist id="model-options"></datalist>
+    </div>
+    <div class="field">
+      <label for="api-key">API key (optional)</label>
+      <input id="api-key" type="password" placeholder="Bearer token" autocomplete="off" />
+    </div>
+    <button type="button" class="ghost" id="health-btn">Health</button>
+  </div>
+
+  <div class="field" style="margin-bottom: 8px;">
+    <label for="state">State (evidence)</label>
+    <textarea id="state">My parcel arrived two weeks late, and my card was charged twice.</textarea>
+  </div>
+
+  <label style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+    <input type="checkbox" id="multimodal" style="width:auto;padding:0;" />
+    Attach image to state (multimodal)
+  </label>
+  <div id="image-zone" class="drop-zone" hidden>
+    <p>Drop an image here, or click to upload</p>
+  </div>
+  <input id="file-input" type="file" accept="image/*" />
+
+  <div class="questions-header">
+    <h2 style="margin:0;">Questions</h2>
+    <div class="add-btns">
+      <button type="button" class="sm ghost" data-add="choice">+ Choice</button>
+      <button type="button" class="sm ghost" data-add="score">+ Score</button>
+      <button type="button" class="sm ghost" data-add="noul">+ Noul</button>
+    </div>
+  </div>
+  <div id="questions"></div>
+
+  <div class="row" style="margin-top: 12px; margin-bottom: 0; justify-content: flex-end;">
+    <button type="button" class="ghost" id="reset-btn">Reset</button>
+    <button type="button" class="primary" id="submit-btn">Evaluate</button>
+  </div>
+</div>
+
+<div id="status"></div>
+
+<div class="panel" id="results-panel" hidden>
+  <h2>Answers</h2>
+  <div id="answers"></div>
+  <details open>
+    <summary>Raw JSON</summary>
+    <pre id="raw-json"></pre>
+  </details>
+</div>
+
+<script>
+const $ = (sel, el = document) => el.querySelector(sel);
+const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
+
+const DEFAULTS = {
+  choice: {
+    id: "department",
+    instructions: "Which department should handle this request?",
+    criteria: [
+      ["shipping", "Delivery"],
+      ["billing", "Billing"],
+      ["technical", "Product fault"],
+    ],
+  },
+  score: {
+    id: "urgency",
+    instructions: "How urgent is this request?",
+    criteria: ["Low", "Medium", "High"],
+  },
+  noul: {
+    id: "delivery",
+    instructions: "Is this a delivery issue?",
+  },
+};
+
+let imageDataUrl = null;
+
+function setStatus(msg, kind = "") {
+  const el = $("#status");
+  el.textContent = msg || "";
+  el.className = kind;
+}
+
+function authHeaders() {
+  const headers = { "Content-Type": "application/json" };
+  const key = $("#api-key").value.trim();
+  if (key) headers.Authorization = `Bearer ${key}`;
+  return headers;
+}
+
+function baseUrl() {
+  return $("#base-url").value.trim().replace(/\/$/, "");
+}
+
+async function checkHealth() {
+  setStatus("Checking…");
+  try {
+    const [health, models] = await Promise.allSettled([
+      fetch(`${baseUrl()}/health`),
+      fetch(`${baseUrl()}/v1/models`, { headers: authHeaders() }),
+    ]);
+    let msg = [];
+    if (health.status === "fulfilled" && health.value.ok) {
+      const body = await health.value.json().catch(() => ({}));
+      msg.push(`health: ${JSON.stringify(body)}`);
+    } else {
+      msg.push("health: unavailable");
+    }
+    if (models.status === "fulfilled" && models.value.ok) {
+      const body = await models.value.json();
+      const ids = (body.data || body.models || []).map((m) => m.id || m).filter(Boolean);
+      const list = $("#model-options");
+      list.replaceChildren(...ids.map((id) => {
+        const opt = document.createElement("option");
+        opt.value = id;
+        return opt;
+      }));
+      if (ids.length && !$("#model").value) $("#model").value = ids[0];
+      msg.push(`models: ${ids.join(", ") || "(none)"}`);
+    } else {
+      msg.push("models: unavailable");
+    }
+    setStatus(msg.join(" · "), "ok");
+  } catch (err) {
+    setStatus(String(err.message || err), "error");
+  }
+}
+
+function addCriterionRow(container, type, key = "", value = "") {
+  const row = document.createElement("div");
+  row.className = type === "score" ? "criterion score-row" : "criterion";
+  if (type === "score") {
+    row.innerHTML = `
+      <input class="crit-value" placeholder="Level label" value="${escapeAttr(value)}" />
+      <button type="button" class="sm danger remove-crit">×</button>
+    `;
+  } else {
+    row.innerHTML = `
+      <input class="crit-key" placeholder="Option id" value="${escapeAttr(key)}" />
+      <input class="crit-value" placeholder="Description" value="${escapeAttr(value)}" />
+      <button type="button" class="sm danger remove-crit">×</button>
+    `;
+  }
+  $(".remove-crit", row).addEventListener("click", () => row.remove());
+  container.append(row);
+}
+
+function escapeAttr(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+}
+
+function addQuestion(type, values = DEFAULTS[type]) {
+  const card = document.createElement("article");
+  card.className = "question";
+  card.dataset.type = type;
+  card.innerHTML = `
+    <div class="question-top">
+      <span class="badge ${type}">${type}</span>
+      <button type="button" class="sm danger remove-q" style="margin-left:auto;">Remove</button>
+    </div>
+    <div class="row" style="margin-bottom:0;">
+      <div class="field">
+        <label>Question ID</label>
+        <input class="q-id" value="${escapeAttr(values.id)}" />
+      </div>
+      <div class="field grow">
+        <label>Instructions</label>
+        <input class="q-instructions" value="${escapeAttr(values.instructions)}" />
+      </div>
+    </div>
+    <div class="criteria"></div>
+    <div class="row" style="margin:8px 0 0; justify-content:flex-end;">
+      <button type="button" class="sm ghost add-crit">+ Option</button>
+    </div>
+  `;
+
+  const criteriaEl = $(".criteria", card);
+  if (type === "choice") {
+    (values.criteria || []).forEach(([k, v]) => addCriterionRow(criteriaEl, type, k, v));
+  } else if (type === "score") {
+    (values.criteria || []).forEach((v) => addCriterionRow(criteriaEl, type, "", v));
+  } else {
+    $(".add-crit", card).hidden = true;
+  }
+
+  $(".remove-q", card).addEventListener("click", () => card.remove());
+  $(".add-crit", card).addEventListener("click", () => addCriterionRow(criteriaEl, type));
+  $("#questions").append(card);
+}
+
+function collectRequest() {
+  const model = $("#model").value.trim();
+  if (!model) throw new Error("Model is required");
+
+  let state = $("#state").value;
+  if (!state.trim()) throw new Error("State is required");
+
+  if ($("#multimodal").checked) {
+    if (!imageDataUrl) throw new Error("Enable multimodal and attach an image, or uncheck multimodal");
+    state = {
+      type: "multimodal",
+      content: [
+        { type: "text", text: state },
+        { type: "image_url", image_url: { url: imageDataUrl } },
+      ],
+    };
+  }
+
+  const cards = $$(".question");
+  if (!cards.length) throw new Error("Add at least one question");
+
+  const questions = {};
+  for (const card of cards) {
+    const type = card.dataset.type;
+    const id = $(".q-id", card).value.trim();
+    const instructions = $(".q-instructions", card).value.trim();
+    if (!id) throw new Error("Question ID is required");
+    if (questions[id]) throw new Error(`Duplicate question ID: ${id}`);
+    if (!instructions) throw new Error(`Instructions required for "${id}"`);
+
+    const question = { type, instructions };
+    if (type === "choice") {
+      question.criteria = {};
+      $$(".criterion", card).forEach((row) => {
+        const key = $(".crit-key", row).value.trim();
+        const desc = $(".crit-value", row).value.trim();
+        if (!key) throw new Error(`Choice "${id}" has an empty option id`);
+        if (Object.hasOwn(question.criteria, key)) throw new Error(`Choice "${id}" duplicate option "${key}"`);
+        question.criteria[key] = desc || null;
+      });
+      if (Object.keys(question.criteria).length < 2) throw new Error(`Choice "${id}" needs at least 2 options`);
+    } else if (type === "score") {
+      question.criteria = $$(".crit-value", card).map((el) => el.value.trim());
+      if (question.criteria.length < 2) throw new Error(`Score "${id}" needs at least 2 levels`);
+      if (question.criteria.some((v) => !v)) throw new Error(`Score "${id}" has an empty level label`);
+    }
+    questions[id] = question;
+  }
+
+  return { model, state, questions };
+}
+
+function pct(x) {
+  return `${(Number(x) * 100).toFixed(1)}%`;
+}
+
+function probabilityRows(probabilities, selected) {
+  const wrap = document.createElement("div");
+  Object.entries(probabilities).forEach(([label, probability]) => {
+    const row = document.createElement("div");
+    row.className = `prob-row${String(label) === String(selected) ? " selected" : ""}`;
+    row.innerHTML = `
+      <div class="prob-label"><span>${label}</span><span>${pct(probability)}</span></div>
+      <div class="prob-track"><div class="prob-fill" style="width:${Math.max(0, Math.min(100, probability * 100))}%"></div></div>
+    `;
+    wrap.append(row);
+  });
+  return wrap;
+}
+
+function renderAnswers(response, elapsedMs) {
+  const list = $("#answers");
+  list.replaceChildren();
+  Object.entries(response.answers || {}).forEach(([id, answer]) => {
+    const card = document.createElement("article");
+    card.className = "answer";
+    const value =
+      answer.type === "choice" ? answer.choice
+      : answer.type === "score" ? Number(answer.score).toFixed(2)
+      : pct(answer.noul);
+    card.innerHTML = `
+      <div class="answer-head">
+        <h3>${id} <span class="badge ${answer.type}">${answer.type}</span></h3>
+        <span class="answer-value">${value}</span>
+      </div>
+    `;
+    if (answer.confidence !== undefined) {
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.textContent = `Confidence ${pct(answer.confidence)}`;
+      card.append(meta);
+    }
+    if (answer.probabilities) {
+      const selected = answer.type === "choice" ? answer.choice : Math.round(answer.score);
+      card.append(probabilityRows(answer.probabilities, selected));
+    } else if (answer.type === "noul") {
+      card.append(probabilityRows({ true: answer.noul, false: 1 - answer.noul }, answer.noul >= 0.5 ? "true" : "false"));
+    }
+    list.append(card);
+  });
+
+  if (response.usage) {
+    const usage = document.createElement("div");
+    usage.className = "meta";
+    usage.textContent = `Usage · input ${response.usage.input_tokens ?? "—"} · output ${response.usage.output_tokens ?? "—"} · ${elapsedMs} ms`;
+    list.prepend(usage);
+  }
+
+  $("#raw-json").textContent = JSON.stringify(response, null, 2);
+  $("#results-panel").hidden = false;
+}
+
+async function submit() {
+  const btn = $("#submit-btn");
+  btn.disabled = true;
+  setStatus("Evaluating…");
+  const started = performance.now();
+  try {
+    const body = collectRequest();
+    const res = await fetch(`${baseUrl()}/v1/systemone`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch { throw new Error(text || `HTTP ${res.status}`); }
+    if (!res.ok) throw new Error(data.detail || data.message || data.error || JSON.stringify(data));
+    const elapsed = Math.round(performance.now() - started);
+    renderAnswers(data, elapsed);
+    setStatus(`Done in ${elapsed} ms`, "ok");
+  } catch (err) {
+    setStatus(String(err.message || err), "error");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function clearImage() {
+  imageDataUrl = null;
+  const zone = $("#image-zone");
+  zone.innerHTML = "<p>Drop an image here, or click to upload</p>";
+}
+
+function setImage(file) {
+  if (!file || !file.type.startsWith("image/")) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    imageDataUrl = reader.result;
+    const zone = $("#image-zone");
+    zone.replaceChildren();
+    const img = document.createElement("img");
+    img.src = imageDataUrl;
+    img.alt = file.name;
+    const name = document.createElement("p");
+    name.textContent = file.name;
+    const clear = document.createElement("button");
+    clear.type = "button";
+    clear.className = "sm danger";
+    clear.textContent = "Clear";
+    clear.addEventListener("click", (e) => { e.stopPropagation(); clearImage(); });
+    zone.append(img, name, clear);
+  };
+  reader.readAsDataURL(file);
+}
+
+function resetForm() {
+  $("#state").value = "My parcel arrived two weeks late, and my card was charged twice.";
+  $("#multimodal").checked = false;
+  $("#image-zone").hidden = true;
+  clearImage();
+  $("#questions").replaceChildren();
+  addQuestion("noul");
+  addQuestion("choice");
+  addQuestion("score");
+  $("#results-panel").hidden = true;
+  setStatus("");
+}
+
+// Events
+$$("[data-add]").forEach((btn) => {
+  btn.addEventListener("click", () => addQuestion(btn.dataset.add));
+});
+$("#submit-btn").addEventListener("click", submit);
+$("#reset-btn").addEventListener("click", resetForm);
+$("#health-btn").addEventListener("click", checkHealth);
+
+$("#multimodal").addEventListener("change", (e) => {
+  $("#image-zone").hidden = !e.target.checked;
+  if (!e.target.checked) clearImage();
+});
+
+const zone = $("#image-zone");
+zone.addEventListener("click", () => $("#file-input").click());
+zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("dragover"); });
+zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
+zone.addEventListener("drop", (e) => {
+  e.preventDefault();
+  zone.classList.remove("dragover");
+  setImage(e.dataTransfer.files[0]);
+});
+$("#file-input").addEventListener("change", (e) => setImage(e.target.files[0]));
+
+resetForm();
+</script>
+</body>
+</html>
